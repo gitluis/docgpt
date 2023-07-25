@@ -1,2 +1,2 @@
 # docgpt
-Chat with Large Language Models to interpret source documents.
+Interact locally with documents using Generative Pre-trained Transformers.
