@@ -1,2 +1,2 @@
 # docgpt
-Interact locally with documents using Generative Pre-trained Transformers.
+Interact with documents using GPT AI models.
