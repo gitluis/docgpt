@@ -85,7 +85,7 @@ def create_vectorstore(splits, dir, openai_key="", embeddings_model_name="", ver
 
     if not os.path.exists(dir):
         # create directory
-        os.mkdir(dir)
+        os.makedirs(dir)
 
     # create word embedding function
     if openai_key:
