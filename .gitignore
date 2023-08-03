@@ -162,3 +162,5 @@ cython_debug/
 # docgpt
 models/
 database/
+documents/
+test-documents/

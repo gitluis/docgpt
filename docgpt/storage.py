@@ -8,6 +8,7 @@ from shutil import rmtree
 from chromadb.config import Settings
 
 from langchain.vectorstores import Chroma
+from langchain.embeddings import OpenAIEmbeddings
 from langchain.embeddings import HuggingFaceEmbeddings
 
 
@@ -59,7 +60,7 @@ def remove_vectorstore(dir, verbose=False):
     return
 
 
-def create_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", verbose=False):
+def create_vectorstore(splits, dir, openai_key="", embeddings_model_name="", verbose=False):
     """
     Create a local vectorstore database to store splits.
 
@@ -69,6 +70,8 @@ def create_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", ve
         A list of content splits in Document objects.
     dir : str
         File path to directory where database will be stored.
+    openai_key : str
+        OpenAI key for embedding models.
     embeddings_model_name : str
         Embeddings model name.
     verbose : bool
@@ -85,17 +88,20 @@ def create_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", ve
         os.mkdir(dir)
 
     # create word embedding function
-    embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
+    if openai_key:
+        embedding = OpenAIEmbeddings(model=embeddings_model_name, chunk_size=1)
+    else:
+        embedding = HuggingFaceEmbeddings(model_name=embeddings_model_name)
     
     # define client settings
     settings = Settings(chroma_db_impl='duckdb+parquet', persist_directory=dir, anonymized_telemetry=False)
 
     if verbose:
-        print(f"Creating vectorstore at dir '{dir}'")
-        print("Creating embeddings...")
+        print(f"Creating vectorstore with chromadb at dir '{dir}'")
+        print(f"Creating embeddings using '{embeddings_model_name}' ...")
 
     # create vectorstore db and embed splits
-    db = Chroma.from_documents(splits, embeddings, persist_directory=dir, client_settings=settings)
+    db = Chroma.from_documents(splits, embedding=embedding, persist_directory=dir, client_settings=settings)
 
     if verbose:
         print(f"Done!")

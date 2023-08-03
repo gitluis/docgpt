@@ -204,3 +204,6 @@ XlsxWriter==3.1.2
 yarl==1.9.2
 zipp==3.16.2
 zstandard==0.21.0
+openai==0.27.8
+tiktoken==0.4.0
+azureml==0.2.7

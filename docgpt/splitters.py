@@ -39,6 +39,7 @@ def split_documents(documents, chunk_size=500, chunk_overlap=50, verbose=False):
         if verbose:
             print(f"Split into {len(splits)} splits of texts")
             print(f"Each split has {chunk_size} tokens max.")
+            print(f"Max. Total Tokens: {len(splits) * chunk_size:,}")
             
     else:
         print(f"No documents available to split")
