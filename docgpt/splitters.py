@@ -16,7 +16,7 @@ def split_documents(documents, chunk_size=500, chunk_overlap=50, verbose=False):
     chunk_size : int
         Number of characters per split.
     chunk_overlap : int
-        //
+        Number of characters that may overlap per split.
     verbose : bool
         Used for verbose mode. True is ON, False is OFF.
 
@@ -38,8 +38,15 @@ def split_documents(documents, chunk_size=500, chunk_overlap=50, verbose=False):
     
         if verbose:
             print(f"Split into {len(splits)} splits of texts")
-            print(f"Each split has {chunk_size} tokens max.")
-            print(f"Max. Total Tokens: {len(splits) * chunk_size:,}")
+            print(f"Each split with a max. limit of {chunk_size} tokens")
+
+            tokens = 0
+            
+            # count  real amount of tokens in all splits
+            for split in splits:
+                tokens += len(split.page_content)
+                
+            print(f"Real # of Tokens: {tokens:,}")
             
     else:
         print(f"No documents available to split")

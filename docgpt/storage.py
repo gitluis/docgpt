@@ -60,7 +60,7 @@ def remove_vectorstore(dir, verbose=False):
     return
 
 
-def create_vectorstore(splits, dir, openai_key="", embeddings_model_name="", verbose=False):
+def create_vectorstore(splits, dir, embeddings_model_name, openai_key="", verbose=False):
     """
     Create a local vectorstore database to store splits.
 
