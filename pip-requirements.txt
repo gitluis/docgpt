@@ -207,3 +207,4 @@ zstandard==0.21.0
 openai==0.27.8
 tiktoken==0.4.0
 azureml==0.2.7
+streamlit==1.25.0
