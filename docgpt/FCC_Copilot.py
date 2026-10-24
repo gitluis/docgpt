@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""
+Scripted Streamlit demo that replays pre-recorded answers.
+
+Answers come from the `questions` dict in `messages.py`; no model is called
+and no `.env` is needed. Only the exact questions stored there have answers.
+
+    streamlit run docgpt/FCC_Copilot.py
+"""
 
 # modules
 import os
@@ -12,7 +20,12 @@ from messages import questions
 
 # functions
 def app():
-    """ Run Sreamlit UI. """
+    """
+    Render the demo chat UI and replay the stored answer to the latest question.
+
+    The answer is revealed word by word to simulate streaming. A question that
+    is not a key of `messages.questions` raises a KeyError.
+    """
 
     st.title("📚🤖 BPPR FCC Co-Pilot")
     st.write("Interact with document(s) using a generative AI model.")
