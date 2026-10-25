@@ -6,9 +6,10 @@ Run it from the repository root so the folders in `.env` resolve:
 
     streamlit run docgpt/app.py
 
-Streamlit reruns this script after every interaction. Each rerun calls
-`run.main()`, which rebuilds the vector store from `DOCUMENTS_DIR` before the
-question is answered.
+The vector store is built from `DOCUMENTS_DIR` once, when the first page
+loads, and the resulting chain is shared by every session until the server
+stops. Use "Rebuild index" in the sidebar after adding, changing or removing
+documents.
 """
 
 # modules
@@ -22,6 +23,42 @@ from run import main
 
 
 # functions
+@st.cache_resource(show_spinner="Indexing documents...")
+def load_qa():
+    """
+    Build the retrieval QA chain once and reuse it across reruns and sessions.
+
+    Returns
+    -------
+    qa : langchain.chains.RetrievalQA
+        Retrieval QA chain returned by `run.main()`.
+    """
+
+    return main()
+
+
+def display_header():
+    """ Display the app's title and description. """
+
+    st.title("FCC Copilot")
+    st.write("Interact with document(s) using a GPT AI model.")
+
+    return
+
+
+def display_sidebar():
+    """ Display the sidebar with a button that rebuilds the index. """
+
+    with st.sidebar:
+        st.write("Added, changed or removed documents? Rebuild the index to use them.")
+
+        # clear the cached chain so the next load_qa() call rebuilds it
+        if st.button("Rebuild index"):
+            load_qa.clear()
+
+    return
+
+
 def set_default_model():
     """
     Store a default model name in the session state if none is set.
@@ -69,9 +106,6 @@ def app(qa):
         messages are displayed but not sent to the chain.
     """
 
-    st.title("FCC Copilot")
-    st.write("Interact with document(s) using a GPT AI model.")
-
     # init
     set_default_model()
     init_chat_history()
@@ -103,5 +137,15 @@ def app(qa):
 
 
 if __name__ == "__main__":
-    qa = main()
+    display_header()
+    display_sidebar()
+
+    # build the chain on first run; later reruns reuse the cached chain
+    try:
+        qa = load_qa()
+    except ValueError as e:
+        # e.g. no supported documents found or an invalid setting
+        st.error(str(e))
+        st.stop()
+
     app(qa)

@@ -34,10 +34,10 @@ flowchart LR
     F --> G["Answer in the chat UI<br/>app.py"]
 ```
 
-1. **Load** – every file in `DOCUMENTS_DIR` is opened with the LangChain loader that matches its extension (`docgpt/loaders.py`).
+1. **Load** – every supported file in `DOCUMENTS_DIR` is opened with the LangChain loader that matches its extension (`docgpt/loaders.py`).
 2. **Split** – documents are cut into chunks of up to 500 characters with a 50-character overlap using `RecursiveCharacterTextSplitter` (`docgpt/splitters.py`).
-3. **Index** – any existing store in `VECTORSTORE_DB_DIR` is deleted and a new Chroma store is built from the chunks (`docgpt/storage.py`). Chunks are embedded with OpenAI embeddings when an API key is configured, otherwise with a local Hugging Face sentence-transformers model.
-4. **Answer** – a `RetrievalQA` chain with the `"stuff"` strategy sends the retrieved chunks and your question to the chat model (temperature 0.7) and returns its answer (`docgpt/run.py`). The Streamlit app (`docgpt/app.py`) shows the conversation.
+3. **Index** – any existing store in `VECTORSTORE_DB_DIR` is deleted and a new Chroma store is built from the chunks (`docgpt/storage.py`). The app does this once, when its first page loads. Chunks are embedded with OpenAI embeddings when an API key is configured, otherwise with a local Hugging Face sentence-transformers model.
+4. **Answer** – a `RetrievalQA` chain finds the chunks most similar to your question (5 by default, set by `TARGET_SOURCES`) and sends them with the question to the chat model (temperature 0.7) in a single prompt (the `"stuff"` strategy), then returns its answer (`docgpt/run.py`). The Streamlit app (`docgpt/app.py`) shows the conversation.
 
 ## Supported file types
 
@@ -52,8 +52,9 @@ flowchart LR
 
 Rules for the documents folder:
 
-- Every entry in the folder must be a file with one of the extensions above, written in **lowercase** (`report.pdf`, not `report.PDF`). Any other entry stops loading with an error, including hidden files such as `.DS_Store`, files without an extension, and subfolders.
-- Subfolders are not scanned.
+- Extensions are matched in any letter case (`report.PDF` works).
+- Files with other extensions are skipped, and a `Skipping unsupported file` message is printed in the terminal.
+- Hidden files (names starting with `.`, such as `.DS_Store`) and subfolders are skipped. Subfolders are not scanned.
 - `documents/` is listed in `.gitignore`, so files you add there are not committed (the sample `documents/bitcoin.pdf` was committed before that rule was added).
 
 ## Requirements
@@ -62,9 +63,9 @@ Rules for the documents folder:
 - **A C++ compiler.** Chroma 0.3.x depends on `hnswlib`, which is only published as source and is compiled during installation: `build-essential` on Linux, Xcode Command Line Tools on macOS, or Microsoft C++ Build Tools on Windows.
 - **An Azure OpenAI resource** (for the Streamlit app and the OpenAI notebooks) with:
   - a chat model deployment, for example GPT-4 32k;
-  - an embeddings deployment named exactly **`text-embedding-ada-002`**. The code does not pass an embeddings deployment name, so LangChain falls back to this default.
-- **Internet access on first run.** The `unstructured` library downloads NLTK data the first time it loads a Word or PowerPoint file, and the local-model notebook downloads its embeddings model from Hugging Face.
-- Optional: **LibreOffice** to load `.doc` files, and a **GPT4All model file** for the local-model notebook (see [Notebooks](#notebooks)).
+  - an embeddings deployment, for example of the `text-embedding-ada-002` model.
+- **Internet access on first run.** The `unstructured` library downloads NLTK data the first time it loads a Word or PowerPoint file, and the local-model notebooks download their embeddings model from Hugging Face.
+- Optional: **LibreOffice** to load `.doc` files, and a **GPT4All model file** for the local-model notebooks (see [Notebooks](#notebooks)).
 
 ## Installation
 
@@ -77,18 +78,17 @@ python3.10 -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 ```
 
-`pip-requirements.txt` is a full freeze of the original development environment. It was captured on Windows and contains two pins that conflict with `streamlit==1.25.0`, so install it without those lines, and add Chroma at a version that supports the code's storage settings:
+Then install the pinned dependencies:
 
 ```bash
-python -c "import re; open('requirements.local.txt', 'w').writelines(l for l in open('pip-requirements.txt') if not re.match(r'(pywin32|pywinpty|Pillow|tzlocal)==', l))"
-pip install -r requirements.local.txt "chromadb==0.3.26"
+pip install -r pip-requirements.txt
 ```
 
-The first command writes `requirements.local.txt`, a copy of `pip-requirements.txt` without the Windows-only `pywin32` and `pywinpty` pins and without the `Pillow` and `tzlocal` pins (pip then picks versions Streamlit accepts). You can delete the file once the install finishes.
+`pip-requirements.txt` pins every package to the versions the project was developed with (mid-2023), on Linux, macOS and Windows. It includes `torch`, so the download is large: several GB on Linux, where torch brings its CUDA libraries.
 
-Why `chromadb==0.3.26`: `conda-requirements.txt` lists `chromadb` without a version, but Chroma 0.4 and later dropped the `duckdb+parquet` storage the code uses, and the later 0.3.x releases (0.3.27 and 0.3.29) require an older FastAPI than the one pinned in `pip-requirements.txt`.
+Chroma is pinned to `0.3.26` on purpose: Chroma 0.4 and later dropped the `duckdb+parquet` storage the code uses. Don't upgrade it.
 
-If you use conda, create the environment with `conda create -n docgpt python=3.10`, activate it, and run the same two commands.
+If you use conda, create the environment with `conda create -n docgpt python=3.10`, activate it, and run the same `pip install` command.
 
 ## Configuration
 
@@ -102,37 +102,41 @@ Keep `.env` in the repository root. It is listed in `.gitignore`; never commit A
 
 ### Streamlit app and OpenAI notebooks
 
-Every `OPENAI_*` value below is passed straight to the `openai` client, so a missing or empty value causes an error. These names follow the Azure OpenAI setup the code was written for.
+The required `OPENAI_*` values are passed straight to the `openai` client, so a missing or empty value causes an error. These names follow the Azure OpenAI setup the code was written for.
 
 | Variable | Required | Description |
 | --- | --- | --- |
 | `DOCUMENTS_DIR` | Yes | Folder with the files to index, relative to where you start the app. Default in the template: `documents`. |
-| `VECTORSTORE_DB_DIR` | Yes | Folder for the Chroma store. Default in the template: `database`. If it already contains a Chroma store, the **whole folder is deleted** and rebuilt on every run, so don't keep other files in it. |
+| `VECTORSTORE_DB_DIR` | Yes | Folder for the Chroma store. Default in the template: `database`. If it already contains a Chroma store, the **whole folder is deleted** and rebuilt each time the index is built, so don't keep other files in it. |
 | `OPENAI_API_TYPE` | Yes | `azure`. |
 | `OPENAI_API_BASE` | Yes | Your resource endpoint, for example `https://<resource-name>.openai.azure.com/`. |
 | `OPENAI_API_VERSION` | Yes | An Azure OpenAI REST API version your resource supports. |
 | `OPENAI_API_KEY` | Yes | Your Azure OpenAI key. |
 | `OPENAI_API_DEPLOYMENT_NAME` | Yes | Name of your chat model deployment. |
 | `OPENAI_API_MODEL_NAME` | Yes | The model behind that deployment, for example `gpt-4-32k`. |
-| `OPENAI_EMBEDDINGS_MODEL_NAME` | Yes | `text-embedding-ada-002`. Your embeddings deployment must have this same name (see [Requirements](#requirements)). |
+| `OPENAI_EMBEDDINGS_MODEL_NAME` | Yes | The embeddings model, for example `text-embedding-ada-002`. |
+| `OPENAI_EMBEDDINGS_DEPLOYMENT_NAME` | No | Name of your embeddings deployment. Defaults to `OPENAI_EMBEDDINGS_MODEL_NAME`, so you can leave it empty when the deployment is named after the model. |
+| `TARGET_SOURCES` | No | Number of chunks retrieved and sent to the model with each question. Default: 5. Set it to `all` to send every chunk, which helps with questions about all of your documents (such as summaries) but only works if their combined text fits in the model's context window. |
 
 Using OpenAI's public API instead of Azure OpenAI is not a tested configuration: requests are built Azure-style, with deployment names.
 
-### Local-model notebook
+### Local-model notebooks
+
+Values in parentheses are the ones set in `env-example.txt`.
 
 | Variable | Description |
 | --- | --- |
 | `DOCUMENTS_DIR`, `VECTORSTORE_DB_DIR` | Same as above. |
 | `LOCAL_MODEL_PATH` | Path to the GPT4All model file, for example `models/ggml-gpt4all-j-v1.3-groovy.bin`. `models/` is git-ignored. |
-| `LOCAL_MODEL_TYPE` | Read by the notebook but not used; the notebook always loads the model with the GPT-J backend. |
-| `EMBEDDINGS_MODEL_NAME` | Hugging Face sentence-transformers model used for embeddings, for example `all-MiniLM-L6-v2`. |
-| `MODEL_MAX_TOKENS` | Maximum number of tokens the model generates (default 1000). |
-| `MODEL_N_BATCH` | Number of prompt tokens processed per batch (default 20). |
-| `TARGET_SOURCES` | Number of chunks retrieved to answer each question (default 5). |
+| `LOCAL_MODEL_TYPE` | Read by the notebooks but not used; they always load the model with the GPT-J backend. |
+| `EMBEDDINGS_MODEL_NAME` | Hugging Face sentence-transformers model used for embeddings (`all-MiniLM-L6-v2`). |
+| `MODEL_MAX_TOKENS` | Maximum number of tokens the model generates (1000). |
+| `MODEL_N_BATCH` | Number of prompt tokens processed per batch (20). |
+| `TARGET_SOURCES` | Number of chunks retrieved to answer each question (5). Must be a whole number in the notebooks; `all` only works in the app. |
 
 ### Settings in code
 
-A few settings are constants in `docgpt/run.py` rather than environment variables: the chunk size (500 characters), the chunk overlap (10% of the chunk size), the chat model temperature (0.7), and the number of chunks retrieved per question (all of them).
+A few settings are constants in `docgpt/run.py` rather than environment variables: the chunk size (500 characters), the chunk overlap (10% of the chunk size), and the chat model temperature (0.7).
 
 ## Usage
 
@@ -149,6 +153,8 @@ A few settings are constants in `docgpt/run.py` rather than environment variable
 
 Run the command from the repository root: `DOCUMENTS_DIR` and `VECTORSTORE_DB_DIR` are resolved relative to the current directory.
 
+The index is built once, when the first page loads, and is then shared by every browser tab until you stop the server. After you add, change or remove documents, click **Rebuild index** in the sidebar (or restart the app). Each build re-embeds every chunk, which costs one embeddings request per chunk.
+
 > [!IMPORTANT]
 > The contents of your documents are sent to your Azure OpenAI resource, both to create embeddings and as context for each answer.
 
@@ -162,7 +168,7 @@ This loads, splits, and indexes the documents into `VECTORSTORE_DB_DIR` and exit
 
 ### Scripted demo
 
-`docgpt/FCC_Copilot.py` is a self-contained Streamlit demo that replays pre-recorded answers stored in `docgpt/messages.py`, with a typing effect. It makes no model calls and needs no `.env`. Only the exact questions stored in `messages.py` have answers; any other input raises a `KeyError`.
+`docgpt/FCC_Copilot.py` is a self-contained Streamlit demo that replays pre-recorded answers stored in `docgpt/messages.py`, with a typing effect. It makes no model calls and needs no `.env`. Only the questions stored in `messages.py` have answers; for anything else, the demo replies with the list of questions it can answer.
 
 ```bash
 streamlit run docgpt/FCC_Copilot.py
@@ -178,14 +184,14 @@ jupyter lab
 
 | Notebook | What it does | Needs |
 | --- | --- | --- |
-| `Document Summarization & QA using OpenAI.ipynb` | Runs the same pipeline as the app step by step, then asks questions and summarization prompts with `ask_document(...)`. `interact(qa)` starts an interactive question loop. | Azure OpenAI variables |
+| `Document Summarization & QA using OpenAI.ipynb` | Runs the same pipeline as the app step by step, then asks questions and summarization prompts with `ask_document(...)`. `interact(document_qa)` starts an interactive question loop. Unlike the app, it sends every chunk with each question so that whole-document summaries work. | Azure OpenAI variables |
 | `Document Summarization & QA using OpenAI (PPT).ipynb` | The same pipeline with a longer set of example questions and summarization prompts. | Azure OpenAI variables |
 | `Document Summarization & QA using Local LLM.ipynb` | Runs fully on your machine: sentence-transformers embeddings and a GPT4All-J model. The summarization cells are stored as raw (non-executable) cells; convert them to code cells to use them. `run_qa()` starts an interactive question loop; type `exit` to stop. | Local-model variables and model file |
-| `ChatLLM with Documents.ipynb` | An earlier version of the local chat loop, kept for reference. It imports `load_documents` and `constants` modules that are no longer in the repository and reads older variable names (`PERSIST_DIRECTORY`, `MODEL_TYPE`, `MODEL_PATH`), so it doesn't run as-is. | — |
+| `ChatLLM with Documents.ipynb` | A minimal local chat loop over a GPT4All-J model. Unlike the other notebooks, it keeps an existing store and adds only documents it hasn't indexed yet. `run()` starts the question loop; type `exit` to stop. | Local-model variables and model file |
 
 The notebooks are committed with the outputs of earlier runs.
 
-For the local-model notebook, obtain the `ggml-gpt4all-j-v1.3-groovy.bin` model file and place it at `LOCAL_MODEL_PATH`. It is a GGML-format model that needs the pinned `gpt4all==1.0.3`; newer GPT4All releases expect GGUF model files.
+For the local-model notebooks, obtain the `ggml-gpt4all-j-v1.3-groovy.bin` model file and place it at `LOCAL_MODEL_PATH`. It is a GGML-format model that needs the pinned `gpt4all==1.0.3`; newer GPT4All releases expect GGUF model files.
 
 ## Project structure
 
@@ -202,8 +208,7 @@ docgpt/
 ├── documents/              # Your input files (git-ignored; contains a sample PDF)
 ├── *.ipynb                 # Exploration notebooks (see Notebooks)
 ├── env-example.txt         # Annotated template for .env
-├── pip-requirements.txt    # Full pip freeze of the original environment
-├── conda-requirements.txt  # Packages installed with conda (chromadb)
+├── pip-requirements.txt    # Pinned dependencies of the original environment
 └── LICENSE
 ```
 
@@ -211,8 +216,8 @@ The `database/` and `models/` folders are created by you or by the app at runtim
 
 ## Known limitations
 
-- **The index is rebuilt on every message.** Streamlit reruns `app.py` after each interaction, and `app.py` calls `run.main()` every time. Each question therefore reloads all documents, deletes and recreates the Chroma store, and re-embeds every chunk (one embeddings request per chunk) before the answer is generated. Expect slow responses and embeddings costs that grow with the size of your documents.
-- **All chunks go into a single prompt.** The retriever returns every chunk (`k` equals the number of chunks) and the `"stuff"` chain places them all in one prompt, so the combined text of your documents must fit in the chat model's context window. The project was used with GPT-4 32k.
+- **The whole index is rebuilt each time it's built.** Starting the app or clicking **Rebuild index** re-embeds every chunk, even for documents that haven't changed.
+- **Answers only see the retrieved chunks.** By default the model gets the 5 chunks most similar to your question, so questions about all of your documents (such as "summarize everything") may miss content. Raise `TARGET_SOURCES`, or set it to `all` if your documents fit in the model's context window.
 - **No conversation memory.** Each question is answered on its own; earlier messages in the chat are displayed but not sent to the model.
 - **No source citations in the app.** The chain is built with `return_source_documents=False`, so answers don't show which documents they came from.
 - **Pinned 2023 dependencies.** See the note at the top and [Installation](#installation).
@@ -221,20 +226,18 @@ The `database/` and `models/` folders are created by you or by the app at runtim
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `ResolutionImpossible` mentioning `Pillow`, `tzlocal`, or `streamlit` | Installing `pip-requirements.txt` directly. Use the filtered install in [Installation](#installation). |
-| `No matching distribution found for pywin32` | Same as above: `pywin32` and `pywinpty` are Windows-only. |
 | Build failure for `wrapt` mentioning `formatargspec` | You're on Python 3.11 or later. Use Python 3.10. |
 | Build failure for `hnswlib` | No C++ compiler available. Install one (see [Requirements](#requirements)). |
-| `ModuleNotFoundError: No module named 'chromadb'` | Chroma isn't in `pip-requirements.txt`. Run `pip install "chromadb==0.3.26"`. |
+| `No module named 'pkg_resources'` when importing `gpt4all` | Your setuptools is too new. Run `pip install "setuptools==68.0.0"`. |
 | Error about a deprecated Chroma configuration | Chroma 0.4 or later is installed. Run `pip install "chromadb==0.3.26"`. |
 | `InvalidAPIType: The API type provided in invalid` | `OPENAI_API_TYPE` is empty or missing in `.env`. Set it to `azure`. |
-| Error saying the deployment does not exist, during "Creating embeddings" | No Azure deployment named `text-embedding-ada-002`. Create one with that name. |
+| Error saying the deployment does not exist, during "Creating embeddings" | Set `OPENAI_EMBEDDINGS_DEPLOYMENT_NAME` to the name of your embeddings deployment. |
 | `ValueError: Directory 'documents' does not exist!` | The app was started from another folder, or `DOCUMENTS_DIR` is wrong. Run from the repository root. |
-| `ValueError: Document type '(...)' is not supported!` | The documents folder contains an unsupported file, a hidden file (such as `.DS_Store`), a file without an extension, or a subfolder. Remove it. |
-| `KeyError: '.PDF'` (or another uppercase extension) | Rename the file with a lowercase extension. |
+| `No supported documents with text found` | The documents folder is empty, or none of its files has a supported extension (check the `Skipping unsupported file` messages in the terminal) or any text. |
+| `Skipping unsupported file` in the terminal | That file's type isn't supported (see [Supported file types](#supported-file-types)); the other files still load. |
+| Answers don't reflect documents you just added | Click **Rebuild index** in the sidebar, or restart the app. |
 | `soffice command was not found` | Install LibreOffice to load `.doc` files, or save them as `.docx`. |
-| Error about the maximum context length | Your documents are too large to fit in one prompt. Use fewer or smaller documents, or a chat deployment with a larger context window. |
-| `KeyError` in `FCC_Copilot.py` | The demo only answers the exact questions stored in `docgpt/messages.py`. |
+| Error about the maximum context length | The retrieved chunks don't fit in one prompt. Lower `TARGET_SOURCES` (or don't use `all`), or use a chat deployment with a larger context window. |
 
 ## License
 

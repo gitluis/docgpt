@@ -41,8 +41,8 @@ def load_document(fp):
     Parameters
     ----------
     fp : str
-        Document file path. The extension must be one of the keys of
-        `DOCUMENT_LOADERS`, in lowercase.
+        Document file path. Its extension (in any letter case) must be one of
+        the keys of `DOCUMENT_LOADERS`.
 
     Returns
     -------
@@ -54,28 +54,48 @@ def load_document(fp):
     ------
     ValueError
         If the file's extension is not supported.
-    KeyError
-        If the extension is supported but not lowercase (e.g. ".PDF").
     """
 
-    # retrieve file's extension type
-    ext = f".{fp.rsplit('.')[-1]}"
+    # retrieve file's extension type (e.g. ".pdf"), ignoring letter case
+    ext = os.path.splitext(fp)[1].lower()
 
     # retrieve doc's loader based on its extension type
-    if ext.lower() in DOCUMENT_LOADERS:
+    if ext in DOCUMENT_LOADERS:
         cls, args = DOCUMENT_LOADERS[ext]
         loader = cls(fp, **args)
     else:
-        raise ValueError(f"Document type '(.{ext})' is not supported!")
-    
+        raise ValueError(f"File type of '{fp}' is not supported!")
+
     return loader.load()
 
 
-def load_documents(dir, ignore_files=[], verbose=False):
+def is_supported(fp):
     """
-    Load every file in a directory.
+    Check whether a file can be loaded.
 
-    Only the top level of `dir` is read; subfolders are not scanned.
+    Parameters
+    ----------
+    fp : str
+        File path.
+
+    Returns
+    -------
+    bool
+        True if the file's extension (in any letter case) has a loader in
+        `DOCUMENT_LOADERS`, False otherwise.
+    """
+
+    return os.path.splitext(fp)[1].lower() in DOCUMENT_LOADERS
+
+
+def load_documents(dir, ignore_files=(), verbose=False):
+    """
+    Load every supported file in a directory.
+
+    Only the top level of `dir` is read. Subfolders and hidden files (names
+    starting with ".", such as ".DS_Store") are skipped silently; other files
+    with an unsupported extension are skipped with a message. Files are loaded
+    in alphabetical order.
 
     Parameters
     ----------
@@ -90,39 +110,47 @@ def load_documents(dir, ignore_files=[], verbose=False):
     Returns
     -------
     list of Documents
-        A list of Document objects.
+        A list of Document objects. Empty if `dir` has no supported files.
 
     Raises
     ------
     ValueError
-        If `dir` does not exist, or if it contains an entry that cannot be
-        loaded: an unsupported file, a hidden file such as ".DS_Store", a file
-        without an extension, or a subfolder.
-    KeyError
-        If a file's extension is supported but not lowercase (e.g. ".PDF").
+        If `dir` does not exist or is not a directory.
     """
 
     files = list()
     loaded_files = list()
 
     # checks whether directory specified exists or not
-    if os.path.exists(dir):
-        # retrieve list of files to be loaded
-        files = [os.path.join(dir, file) for file in os.listdir(dir) if file not in ignore_files]
-        n = len(files)
-        
-        # load files
-        with tqdm(total=n, desc=f"Loading {n} file(s) from directory '{dir}'", ncols=100) as pbar:
-            for file in files:
-                doc = load_document(file)
-                loaded_files.extend(doc)
-                pbar.update()
-
-        if verbose:
-            for file in files:
-                print(f"Loaded file from '{file}'")
-    
-    else:
+    if not os.path.isdir(dir):
         raise ValueError(f"Directory '{dir}' does not exist!")
-    
+
+    # retrieve list of files to be loaded
+    for name in sorted(os.listdir(dir)):
+        fp = os.path.join(dir, name)
+
+        # skip ignored files, hidden files and subfolders
+        if name in ignore_files or name.startswith(".") or not os.path.isfile(fp):
+            continue
+
+        # skip files without a document loader
+        if not is_supported(fp):
+            print(f"Skipping unsupported file '{fp}'")
+            continue
+
+        files.append(fp)
+
+    n = len(files)
+
+    # load files
+    with tqdm(total=n, desc=f"Loading {n} file(s) from directory '{dir}'", ncols=100) as pbar:
+        for file in files:
+            doc = load_document(file)
+            loaded_files.extend(doc)
+            pbar.update()
+
+    if verbose:
+        for file in files:
+            print(f"Loaded file from '{file}'")
+
     return loaded_files

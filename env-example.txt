@@ -17,9 +17,13 @@ DOCUMENTS_DIR=documents
 # whole folder is deleted and rebuilt on every run: keep nothing else in it.
 VECTORSTORE_DB_DIR=database
 
+# Number of chunks retrieved to answer each question. In the Streamlit app,
+# `all` sends every chunk (only if they fit in the model's context window).
+TARGET_SOURCES=5
+
 # ---------------------------------------------------------------------------
 # Azure OpenAI (required by the Streamlit app and the OpenAI notebooks)
-# Every value is passed straight to the openai client: leave none empty.
+# Values are passed straight to the openai client: leave none empty unless noted.
 # ---------------------------------------------------------------------------
 
 # Must be `azure`.
@@ -40,12 +44,14 @@ OPENAI_API_DEPLOYMENT_NAME=
 # Model behind that deployment, e.g. gpt-4-32k.
 OPENAI_API_MODEL_NAME=
 
-# Embeddings model. Your embeddings deployment must have this exact name,
-# because the code does not pass a separate deployment name.
+# Embeddings model, e.g. text-embedding-ada-002.
 OPENAI_EMBEDDINGS_MODEL_NAME=text-embedding-ada-002
 
+# Name of your embeddings deployment. Leave empty if it is named after the model.
+OPENAI_EMBEDDINGS_DEPLOYMENT_NAME=
+
 # ---------------------------------------------------------------------------
-# Local model (used only by "Document Summarization & QA using Local LLM.ipynb")
+# Local model (used only by the "Local LLM" and "ChatLLM" notebooks)
 # ---------------------------------------------------------------------------
 
 # Read by the notebook but not used: it always loads the model with the GPT-J backend.
@@ -62,6 +68,3 @@ MODEL_MAX_TOKENS=1000
 
 # Number of prompt tokens processed per batch.
 MODEL_N_BATCH=20
-
-# Number of chunks retrieved to answer each question.
-TARGET_SOURCES=5
