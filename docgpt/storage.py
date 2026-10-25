@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+Create, check, update and remove DocGPT's local Chroma vector store.
+
+The store uses Chroma's legacy "duckdb+parquet" persistence, which requires
+chromadb 0.3.x (0.4 and later removed it).
+"""
 
 # modules
 import os
@@ -16,6 +22,10 @@ from langchain.embeddings import HuggingFaceEmbeddings
 def vectorstore_exists(dir):
     """
     Checks whether a vectorstore storage exists in the directory specified or not.
+
+    A directory counts as a vectorstore when it contains the
+    "chroma-embeddings.parquet" and "chroma-collections.parquet" files and an
+    "index" folder with more than 3 files.
 
     Parameters
     ----------
@@ -36,7 +46,7 @@ def vectorstore_exists(dir):
 
     # checks whether path to vectorstore's index exists or not
     if os.path.exists(index):
-        # checks wether parquet files exists or not
+        # checks whether parquet files exist or not
         if os.path.exists(embeddings) and os.path.exists(collections):
             contents = os.listdir(index)
             
@@ -48,7 +58,19 @@ def vectorstore_exists(dir):
 
 
 def remove_vectorstore(dir, verbose=False):
-    """ Remove directory and all of its contents. """
+    """
+    Remove directory and all of its contents.
+
+    Everything in `dir` is deleted, not only the vectorstore files. Does
+    nothing if `dir` does not exist.
+
+    Parameters
+    ----------
+    dir : str
+        File path to directory.
+    verbose : bool
+        Used for verbose mode. True is ON, False is OFF.
+    """
 
     if verbose:
         print(f"Removing vectorstore at dir '{dir}'")
@@ -64,16 +86,24 @@ def create_vectorstore(splits, dir, embeddings_model_name, openai_key="", verbos
     """
     Create a local vectorstore database to store splits.
 
+    The directory is created if needed. Call `db.persist()` on the result to
+    write the store to disk.
+
     Parameters
     ----------
     splits : list of Documents
         A list of content splits in Document objects.
     dir : str
         File path to directory where database will be stored.
-    openai_key : str
-        OpenAI key for embedding models.
     embeddings_model_name : str
-        Embeddings model name.
+        Embeddings model name. With `openai_key`, an OpenAI embeddings model
+        (e.g. "text-embedding-ada-002"); without it, a Hugging Face
+        sentence-transformers model (e.g. "all-MiniLM-L6-v2").
+    openai_key : str
+        OpenAI key for embedding models. If empty, embeddings are computed
+        locally with Hugging Face instead. With a key, one embeddings request
+        is sent per split; on Azure OpenAI, the request goes to the deployment
+        named "text-embedding-ada-002" (LangChain's default).
     verbose : bool
         Used for verbose mode. True is ON, False is OFF.
 
@@ -112,6 +142,11 @@ def create_vectorstore(splits, dir, embeddings_model_name, openai_key="", verbos
 def update_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", verbose=False):
     """
     Update an existing local vectorstore database.
+
+    Adds only the splits whose "source" file is not already in the store.
+    Embeddings are always computed with Hugging Face, so only use this on a
+    store created with the same Hugging Face model (not with OpenAI
+    embeddings). Not used by the app.
 
     Parameters
     ----------

@@ -1,20 +1,67 @@
+# DocGPT configuration template.
+# Copy this file to `.env` in the repository root and fill in the values:
+#   cp env-example.txt .env
+# `.env` is git-ignored. Never commit API keys.
+# See the Configuration section of README.md for details.
+
+# ---------------------------------------------------------------------------
+# Folders (used by the Streamlit app and all notebooks)
+# Relative paths are resolved from the folder you start the app or Jupyter in,
+# so run them from the repository root.
+# ---------------------------------------------------------------------------
+
+# Folder with the files to index (.pdf, .docx, .doc, .pptx, .csv, .txt).
 DOCUMENTS_DIR=documents
+
+# Folder for the Chroma vector store. If it already holds a Chroma store, the
+# whole folder is deleted and rebuilt on every run: keep nothing else in it.
 VECTORSTORE_DB_DIR=database
 
-EMBEDDINGS_MODEL_NAME=
+# ---------------------------------------------------------------------------
+# Azure OpenAI (required by the Streamlit app and the OpenAI notebooks)
+# Every value is passed straight to the openai client: leave none empty.
+# ---------------------------------------------------------------------------
 
+# Must be `azure`.
+OPENAI_API_TYPE=azure
+
+# Your resource endpoint, e.g. https://<resource-name>.openai.azure.com/
+OPENAI_API_BASE=
+
+# An Azure OpenAI REST API version supported by your resource.
+OPENAI_API_VERSION=
+
+# Your Azure OpenAI key.
+OPENAI_API_KEY=
+
+# Name of your chat model deployment.
+OPENAI_API_DEPLOYMENT_NAME=
+
+# Model behind that deployment, e.g. gpt-4-32k.
+OPENAI_API_MODEL_NAME=
+
+# Embeddings model. Your embeddings deployment must have this exact name,
+# because the code does not pass a separate deployment name.
+OPENAI_EMBEDDINGS_MODEL_NAME=text-embedding-ada-002
+
+# ---------------------------------------------------------------------------
+# Local model (used only by "Document Summarization & QA using Local LLM.ipynb")
+# ---------------------------------------------------------------------------
+
+# Read by the notebook but not used: it always loads the model with the GPT-J backend.
 LOCAL_MODEL_TYPE=GPT4All
+
+# Path to the GPT4All model file (GGML format; `models/` is git-ignored).
 LOCAL_MODEL_PATH=models/ggml-gpt4all-j-v1.3-groovy.bin
+
+# Hugging Face sentence-transformers model used for embeddings.
 EMBEDDINGS_MODEL_NAME=all-MiniLM-L6-v2
 
-OPENAI_API_TYPE=
-OPENAI_API_BASE=
-OPENAI_API_VERSION=
-OPENAI_API_KEY=
-OPENAI_API_DEPLOYMENT_NAME=
-OPENAI_API_MODEL_NAME=
-OPENAI_EMBEDDINGS_MODEL_NAME=
-
+# Maximum number of tokens the model generates per answer.
 MODEL_MAX_TOKENS=1000
+
+# Number of prompt tokens processed per batch.
 MODEL_N_BATCH=20
+
+# Number of chunks retrieved to answer each question.
 TARGET_SOURCES=5

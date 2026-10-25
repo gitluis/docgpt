@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+""" Pre-recorded questions and answers replayed by the `FCC_Copilot.py` demo. """
 
 # gpt-4-32k questions with answers
 questions = {

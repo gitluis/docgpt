@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""
+Streamlit chat app for DocGPT.
+
+Run it from the repository root so the folders in `.env` resolve:
+
+    streamlit run docgpt/app.py
+
+Streamlit reruns this script after every interaction. Each rerun calls
+`run.main()`, which rebuilds the vector store from `DOCUMENTS_DIR` before the
+question is answered.
+"""
 
 # modules
 import os
@@ -12,7 +23,14 @@ from run import main
 
 # functions
 def set_default_model():
-    """ Set a default model. """
+    """
+    Store a default model name in the session state if none is set.
+
+    Notes
+    -----
+    The stored value is not used to answer questions. The chat model comes
+    from `OPENAI_API_DEPLOYMENT_NAME` and `OPENAI_API_MODEL_NAME` (see `run.py`).
+    """
     
     if "openai_model" not in st.session_state:
         st.session_state["openai_model"] = "gpt-4-32k"
@@ -21,7 +39,7 @@ def set_default_model():
 
 
 def init_chat_history():
-    """ Initiatilize chat history. """
+    """ Initialize an empty chat history in the session state on first run. """
     
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -30,7 +48,7 @@ def init_chat_history():
 
 
 def display_chat_history():
-    """ Display chat history on app re-run. """
+    """ Redraw the messages stored in the session state after each rerun. """
     
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -40,7 +58,16 @@ def display_chat_history():
 
 
 def app(qa):
-    """ Run Sreamlit UI. """
+    """
+    Render the Streamlit chat UI and answer the latest question.
+
+    Parameters
+    ----------
+    qa : langchain.chains.RetrievalQA
+        Retrieval QA chain returned by `run.main()`. It is called with the
+        user's question and its "result" key is shown as the answer. Earlier
+        messages are displayed but not sent to the chain.
+    """
 
     st.title("FCC Copilot")
     st.write("Interact with document(s) using a GPT AI model.")

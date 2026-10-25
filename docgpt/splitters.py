@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+""" Split LangChain documents into overlapping chunks for embedding. """
 
 # modules
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -9,21 +10,27 @@ def split_documents(documents, chunk_size=500, chunk_overlap=50, verbose=False):
     """
     Split documents into multiple texts (or splits).
 
+    Uses LangChain's `RecursiveCharacterTextSplitter`, which prefers to break
+    on paragraphs, then lines, then words. Each split keeps the metadata
+    (such as "source") of the document it came from.
+
     Parameters
     ----------
     documents : list of Documents
         List of Document objects.
     chunk_size : int
-        Number of characters per split.
+        Maximum number of characters per split.
     chunk_overlap : int
         Number of characters that may overlap per split.
     verbose : bool
-        Used for verbose mode. True is ON, False is OFF.
+        Used for verbose mode. True is ON, False is OFF. The printed
+        "tokens" figures are character counts.
 
     Returns
     -------
     splits : list of Documents
-        A list of content splits in Document objects.
+        A list of content splits in Document objects. Empty if `documents`
+        is empty.
     """
 
     splits = list()

@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+Load files into LangChain `Document` objects.
+
+The loader is chosen from the file extension using `DOCUMENT_LOADERS`.
+Supported extensions: .csv, .pdf, .txt, .pptx, .doc and .docx. Loading .doc
+files requires LibreOffice (`soffice`) to be installed.
+"""
 
 # modules
 import os
@@ -34,12 +41,21 @@ def load_document(fp):
     Parameters
     ----------
     fp : str
-        Document file path.
+        Document file path. The extension must be one of the keys of
+        `DOCUMENT_LOADERS`, in lowercase.
 
     Returns
     -------
     list of Documents
-        A list of Document objects.
+        A list of Document objects (for example, one per PDF page or one per
+        CSV row).
+
+    Raises
+    ------
+    ValueError
+        If the file's extension is not supported.
+    KeyError
+        If the extension is supported but not lowercase (e.g. ".PDF").
     """
 
     # retrieve file's extension type
@@ -57,14 +73,17 @@ def load_document(fp):
 
 def load_documents(dir, ignore_files=[], verbose=False):
     """
-    Load multiple documents.
+    Load every file in a directory.
+
+    Only the top level of `dir` is read; subfolders are not scanned.
 
     Parameters
     ----------
     dir : str
         File path to directory containing documents.
-    ignore_files : list or str
-        A list of paths of files that will not be loaded.
+    ignore_files : list of str
+        Names of files inside `dir` (names, not paths) that will not be
+        loaded.
     verbose : bool
         Used for verbose mode. True is ON, False is OFF.
 
@@ -72,6 +91,15 @@ def load_documents(dir, ignore_files=[], verbose=False):
     -------
     list of Documents
         A list of Document objects.
+
+    Raises
+    ------
+    ValueError
+        If `dir` does not exist, or if it contains an entry that cannot be
+        loaded: an unsupported file, a hidden file such as ".DS_Store", a file
+        without an extension, or a subfolder.
+    KeyError
+        If a file's extension is supported but not lowercase (e.g. ".PDF").
     """
 
     files = list()

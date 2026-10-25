@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+"""
+Build DocGPT's retrieval QA chain from the documents folder.
+
+Settings are read from `.env` when this module is imported (see
+`env-example.txt`): `DOCUMENTS_DIR`, `VECTORSTORE_DB_DIR` and the Azure
+OpenAI `OPENAI_*` variables.
+
+Running this file directly builds the vector store and exits, which is a
+quick way to check that documents load and embeddings work:
+
+    python docgpt/run.py
+"""
 
 # modules
 import os
@@ -33,12 +45,33 @@ llm_model_name = os.environ.get("OPENAI_API_MODEL_NAME")
 llm_deployment_name = os.environ.get("OPENAI_API_DEPLOYMENT_NAME")
 
 embeddings_model_name = os.environ.get("OPENAI_EMBEDDINGS_MODEL_NAME")
+# note: not used; OpenAIEmbeddings falls back to a deployment named
+# "text-embedding-ada-002", so the Azure embeddings deployment needs that name
 embeddings_deployment_name = os.environ.get("OPENAI_EMBEDDINGS_MODEL_NAME")
 
 
 # functions
 def main():
-    """ Run DocGPT. """
+    """
+    Index the documents and build a retrieval QA chain over them.
+
+    Loads every file in `DOCUMENTS_DIR`, splits it into 500-character chunks
+    with a 50-character overlap, replaces the Chroma store in
+    `VECTORSTORE_DB_DIR` with a new one, and connects it to an Azure OpenAI
+    chat model (temperature 0.7).
+
+    Returns
+    -------
+    qa : langchain.chains.RetrievalQA
+        A "stuff" chain whose retriever returns every chunk, so all document
+        text is sent to the model with each question. Call it with a question
+        string; the answer is in the "result" key of the returned dict.
+
+    Notes
+    -----
+    Each call deletes and re-creates the vector store and re-embeds every
+    chunk, which costs one embeddings request per chunk.
+    """
     
     # -------------- #
     # Load documents #
