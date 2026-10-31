@@ -17,9 +17,9 @@ DOCUMENTS_DIR=documents
 # whole folder is deleted and rebuilt on every run: keep nothing else in it.
 VECTORSTORE_DB_DIR=database
 
-# Number of chunks retrieved to answer each question. `all` sends every chunk,
-# for summaries and "list everything" questions (only if they fit in the
-# model's context window).
+# Number of chunks retrieved to answer each question. `all` sends every chunk
+# with every question (only if they fit in the model's context window). The
+# app already sends every chunk for summary requests when they fit.
 TARGET_SOURCES=5
 
 # How those chunks are picked: `mmr` (default) takes the most relevant chunks
@@ -49,6 +49,10 @@ OPENAI_API_DEPLOYMENT_NAME=
 
 # Model behind that deployment, e.g. gpt-4-32k.
 OPENAI_API_MODEL_NAME=
+
+# Tokens that deployment accepts (prompt plus answer), e.g. 32768. Leave empty
+# to look it up from OPENAI_API_MODEL_NAME (unknown models: 8192).
+OPENAI_API_CONTEXT_WINDOW=
 
 # Embeddings model, e.g. text-embedding-ada-002.
 OPENAI_EMBEDDINGS_MODEL_NAME=text-embedding-ada-002
