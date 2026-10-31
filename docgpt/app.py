@@ -19,6 +19,7 @@ import openai
 
 import streamlit as st
 
+from retrieval import format_sources
 from run import main
 
 
@@ -84,12 +85,29 @@ def init_chat_history():
     return
 
 
+def display_sources(sources):
+    """
+    Show the files an answer was based on, under the answer.
+
+    Parameters
+    ----------
+    sources : list of str
+        Entries from `retrieval.format_sources`, e.g. "bitcoin.pdf (pages 3, 4)".
+    """
+
+    if sources:
+        st.caption("Sources: " + " · ".join(sources))
+
+    return
+
+
 def display_chat_history():
     """ Redraw the messages stored in the session state after each rerun. """
     
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+            display_sources(message.get("sources"))
     
     return
 
@@ -102,8 +120,9 @@ def app(qa):
     ----------
     qa : langchain.chains.RetrievalQA
         Retrieval QA chain returned by `run.main()`. It is called with the
-        user's question and its "result" key is shown as the answer. Earlier
-        messages are displayed but not sent to the chain.
+        user's question; its "result" key is shown as the answer, followed
+        by the files of the chunks in "source_documents". Earlier messages
+        are displayed but not sent to the chain.
     """
 
     # init
@@ -125,13 +144,15 @@ def app(qa):
         # send query to assistant to obtain a response
         output = qa(query)
         response = output.get("result")
+        sources = format_sources(output.get("source_documents"))
 
-        # display assistant response in chat message container
+        # display assistant response and its sources in chat message container
         with st.chat_message("assistant"):
             st.markdown(response)
+            display_sources(sources)
 
         # add assistant response to chat history
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        st.session_state.messages.append({"role": "assistant", "content": response, "sources": sources})
         
     return
 

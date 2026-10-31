@@ -1,0 +1,19 @@
+[
+  {"question": "What problem with trusted third parties does the paper set out to solve?", "source": "bitcoin.pdf", "pages": [1]},
+  {"question": "How does the paper define an electronic coin?", "source": "bitcoin.pdf", "pages": [2]},
+  {"question": "What does the timestamp server do?", "source": "bitcoin.pdf", "pages": [2]},
+  {"question": "How does proof-of-work make past blocks hard to change?", "source": "bitcoin.pdf", "pages": [3]},
+  {"question": "How is the proof-of-work difficulty kept steady over time?", "source": "bitcoin.pdf", "pages": [3]},
+  {"question": "What are the steps to run the network?", "source": "bitcoin.pdf", "pages": [3]},
+  {"question": "Which chain do nodes consider the correct one?", "source": "bitcoin.pdf", "pages": [3]},
+  {"question": "What incentive do nodes have to support the network?", "source": "bitcoin.pdf", "pages": [4]},
+  {"question": "How can old transactions be discarded to save disk space?", "source": "bitcoin.pdf", "pages": [4]},
+  {"question": "How much storage do block headers need per year?", "source": "bitcoin.pdf", "pages": [4]},
+  {"question": "How can a user verify payments without running a full network node?", "source": "bitcoin.pdf", "pages": [5]},
+  {"question": "How are transactions with multiple inputs and outputs handled?", "source": "bitcoin.pdf", "pages": [5]},
+  {"question": "How does the system keep transactions private?", "source": "bitcoin.pdf", "pages": [6]},
+  {"question": "Why should a new key pair be used for each transaction?", "source": "bitcoin.pdf", "pages": [6]},
+  {"question": "How long should a recipient wait before being sure a transaction can't be reversed?", "source": "bitcoin.pdf", "pages": [7, 8]},
+  {"question": "What is the probability that an attacker with 10% of the CPU power catches up from 5 blocks behind?", "source": "bitcoin.pdf", "pages": [8]},
+  {"question": "What does the conclusion say the system achieves?", "source": "bitcoin.pdf", "pages": [8]}
+]
