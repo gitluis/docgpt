@@ -19,6 +19,40 @@ from langchain.embeddings import HuggingFaceEmbeddings
 
 
 # functions
+def get_embedding_function(embeddings_model_name, openai_key="", embeddings_deployment_name=None):
+    """
+    Create the embedding function used to embed splits and queries.
+
+    Parameters
+    ----------
+    embeddings_model_name : str
+        Embeddings model name. With `openai_key`, an OpenAI embeddings model
+        (e.g. "text-embedding-ada-002"); without it, a Hugging Face
+        sentence-transformers model (e.g. "all-MiniLM-L6-v2").
+    openai_key : str
+        OpenAI key for embedding models. If empty, embeddings are computed
+        locally with Hugging Face instead.
+    embeddings_deployment_name : str, optional
+        Azure OpenAI deployment that serves the embeddings model. Defaults to
+        `embeddings_model_name`. Ignored without `openai_key`.
+
+    Returns
+    -------
+    langchain.embeddings.base.Embeddings
+        An OpenAIEmbeddings or HuggingFaceEmbeddings object.
+    """
+
+    if openai_key:
+        # chunk_size=1 sends one text per embeddings request
+        return OpenAIEmbeddings(
+            model=embeddings_model_name,
+            deployment=embeddings_deployment_name or embeddings_model_name,
+            chunk_size=1,
+        )
+
+    return HuggingFaceEmbeddings(model_name=embeddings_model_name)
+
+
 def vectorstore_exists(dir):
     """
     Checks whether a vectorstore storage exists in the directory specified or not.
@@ -82,7 +116,7 @@ def remove_vectorstore(dir, verbose=False):
     return
 
 
-def create_vectorstore(splits, dir, embeddings_model_name, openai_key="", verbose=False):
+def create_vectorstore(splits, dir, embeddings_model_name, openai_key="", verbose=False, embeddings_deployment_name=None):
     """
     Create a local vectorstore database to store splits.
 
@@ -102,10 +136,12 @@ def create_vectorstore(splits, dir, embeddings_model_name, openai_key="", verbos
     openai_key : str
         OpenAI key for embedding models. If empty, embeddings are computed
         locally with Hugging Face instead. With a key, one embeddings request
-        is sent per split; on Azure OpenAI, the request goes to the deployment
-        named "text-embedding-ada-002" (LangChain's default).
+        is sent per split.
     verbose : bool
         Used for verbose mode. True is ON, False is OFF.
+    embeddings_deployment_name : str, optional
+        Azure OpenAI deployment that serves the embeddings model. Defaults to
+        `embeddings_model_name`. Ignored without `openai_key`.
 
     Returns
     -------
@@ -118,10 +154,7 @@ def create_vectorstore(splits, dir, embeddings_model_name, openai_key="", verbos
         os.makedirs(dir)
 
     # create word embedding function
-    if openai_key:
-        embedding = OpenAIEmbeddings(model=embeddings_model_name, chunk_size=1)
-    else:
-        embedding = HuggingFaceEmbeddings(model_name=embeddings_model_name)
+    embedding = get_embedding_function(embeddings_model_name, openai_key, embeddings_deployment_name)
     
     # define client settings
     settings = Settings(chroma_db_impl='duckdb+parquet', persist_directory=dir, anonymized_telemetry=False)
@@ -139,14 +172,14 @@ def create_vectorstore(splits, dir, embeddings_model_name, openai_key="", verbos
     return db
 
 
-def update_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", verbose=False):
+def update_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", verbose=False, openai_key="", embeddings_deployment_name=None):
     """
     Update an existing local vectorstore database.
 
     Adds only the splits whose "source" file is not already in the store.
-    Embeddings are always computed with Hugging Face, so only use this on a
-    store created with the same Hugging Face model (not with OpenAI
-    embeddings). Not used by the app.
+    Use the same embeddings settings the store was created with, so that new
+    and existing vectors are comparable. Call `db.persist()` on the result to
+    write the changes to disk. Not used by the app.
 
     Parameters
     ----------
@@ -155,9 +188,16 @@ def update_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", ve
     dir : str
         File path to directory where database will be stored.
     embeddings_model_name : str
-        Embeddings model name.
+        Embeddings model name. With `openai_key`, an OpenAI embeddings model;
+        without it, a Hugging Face sentence-transformers model.
     verbose : bool
         Used for verbose mode. True is ON, False is OFF.
+    openai_key : str
+        OpenAI key for embedding models. If empty, embeddings are computed
+        locally with Hugging Face instead.
+    embeddings_deployment_name : str, optional
+        Azure OpenAI deployment that serves the embeddings model. Defaults to
+        `embeddings_model_name`. Ignored without `openai_key`.
 
     Returns
     -------
@@ -168,7 +208,7 @@ def update_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", ve
     new_splits = list()
 
     # create word embedding function
-    embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name)
+    embeddings = get_embedding_function(embeddings_model_name, openai_key, embeddings_deployment_name)
     
     # define client settings
     settings = Settings(chroma_db_impl='duckdb+parquet', persist_directory=dir, anonymized_telemetry=False)
@@ -181,16 +221,19 @@ def update_vectorstore(splits, dir, embeddings_model_name="all-MiniLM-L6-v2", ve
 
     # retrieve existing documents in vs to avoid duplicates (needs to be reviewed)
     collection = db.get()
-    vs_documents = {metadata["source"] for metadata in collection["metadatas"]}
+    vs_documents = {metadata.get("source") for metadata in collection["metadatas"] if metadata}
     new_document_sources = [s.metadata["source"] for s in splits]
     new_splits = [split for doc, split in zip(new_document_sources, splits) if doc not in vs_documents]
 
     if new_splits:
         if verbose:
-            print(f"Adding {len(splits)} new splits...")
+            print(f"Adding {len(new_splits)} new splits...")
         
         # add new splits
         db.add_documents(new_splits)
+
+    elif verbose:
+        print("No new splits to add")
 
     if verbose:
         print(f"Done!")
