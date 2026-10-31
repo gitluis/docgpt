@@ -17,9 +17,15 @@ DOCUMENTS_DIR=documents
 # whole folder is deleted and rebuilt on every run: keep nothing else in it.
 VECTORSTORE_DB_DIR=database
 
-# Number of chunks retrieved to answer each question. In the Streamlit app,
-# `all` sends every chunk (only if they fit in the model's context window).
+# Number of chunks retrieved to answer each question. `all` sends every chunk,
+# for summaries and "list everything" questions (only if they fit in the
+# model's context window).
 TARGET_SOURCES=5
+
+# How those chunks are picked: `mmr` (default) takes the most relevant chunks
+# but skips near-duplicates; `similarity` takes the most relevant as they are.
+# Ignored when TARGET_SOURCES is `all`.
+RETRIEVER_SEARCH_TYPE=mmr
 
 # ---------------------------------------------------------------------------
 # Azure OpenAI (required by the Streamlit app and the OpenAI notebooks)

@@ -3,8 +3,8 @@
 Build DocGPT's retrieval QA chain from the documents folder.
 
 Settings are read from `.env` when this module is imported (see
-`env-example.txt`): `DOCUMENTS_DIR`, `VECTORSTORE_DB_DIR`, `TARGET_SOURCES`
-and the Azure OpenAI `OPENAI_*` variables.
+`env-example.txt`): `DOCUMENTS_DIR`, `VECTORSTORE_DB_DIR`, `TARGET_SOURCES`,
+`RETRIEVER_SEARCH_TYPE` and the Azure OpenAI `OPENAI_*` variables.
 
 Running this file directly builds the vector store and exits, which is a
 quick way to check that documents load and embeddings work:
@@ -17,6 +17,7 @@ import os
 import openai
 
 import loaders
+import retrieval
 import splitters
 import storage
 
@@ -39,6 +40,9 @@ vectorstore_db_dir = os.environ.get("VECTORSTORE_DB_DIR")
 # number of chunks retrieved to answer each question ("all" sends every chunk)
 target_sources = os.environ.get("TARGET_SOURCES")
 
+# how those chunks are picked: "mmr" (default) or "similarity"
+retriever_search_type = os.environ.get("RETRIEVER_SEARCH_TYPE")
+
 openai.api_type = os.environ.get("OPENAI_API_TYPE")
 openai.api_base = os.environ.get("OPENAI_API_BASE")
 openai.api_version = os.environ.get("OPENAI_API_VERSION")
@@ -52,52 +56,7 @@ embeddings_model_name = os.environ.get("OPENAI_EMBEDDINGS_MODEL_NAME")
 embeddings_deployment_name = os.environ.get("OPENAI_EMBEDDINGS_DEPLOYMENT_NAME") or embeddings_model_name
 
 
-# constants
-DEFAULT_TARGET_SOURCES = 5
-
-
 # functions
-def get_target_sources(value, n_splits):
-    """
-    Work out how many chunks to retrieve for each question.
-
-    Parameters
-    ----------
-    value : str or None
-        Value of `TARGET_SOURCES`: a positive whole number, or "all" to
-        retrieve every chunk. Empty or None uses `DEFAULT_TARGET_SOURCES`.
-    n_splits : int
-        Number of chunks in the vector store.
-
-    Returns
-    -------
-    k : int
-        Number of chunks to retrieve, never more than `n_splits`.
-
-    Raises
-    ------
-    ValueError
-        If `value` is not a positive whole number or "all".
-    """
-
-    value = (value or "").strip()
-
-    if not value:
-        k = DEFAULT_TARGET_SOURCES
-    elif value.lower() == "all":
-        k = n_splits
-    else:
-        try:
-            k = int(value)
-        except ValueError:
-            k = 0
-
-        if k < 1:
-            raise ValueError(f"TARGET_SOURCES must be a positive whole number or 'all', not '{value}'")
-
-    return min(k, n_splits)
-
-
 def main():
     """
     Index the documents and build a retrieval QA chain over them.
@@ -110,15 +69,16 @@ def main():
     Returns
     -------
     qa : langchain.chains.RetrievalQA
-        A "stuff" chain that sends the `TARGET_SOURCES` chunks most similar
-        to the question (5 by default) to the model. Call it with a question
-        string; the answer is in the "result" key of the returned dict.
+        A "stuff" chain that sends `TARGET_SOURCES` chunks (5 by default) to
+        the model, picked by `RETRIEVER_SEARCH_TYPE` (see `retrieval.py`).
+        Call it with a question string; the answer is in the "result" key of
+        the returned dict.
 
     Raises
     ------
     ValueError
         If `DOCUMENTS_DIR` has no supported documents with text, or if
-        `TARGET_SOURCES` is invalid.
+        `TARGET_SOURCES` or `RETRIEVER_SEARCH_TYPE` is invalid.
 
     Notes
     -----
@@ -149,8 +109,8 @@ def main():
     if not splits:
         raise ValueError(f"No supported documents with text found in directory '{documents_dir}'!")
 
-    # validate setting before spending time and requests on embeddings
-    k = get_target_sources(target_sources, len(splits))
+    # validate retrieval settings before spending time and requests on embeddings
+    retrieval.get_search_settings(target_sources, retriever_search_type, len(splits))
 
     # --------------------- #
     # Create local database #
@@ -181,8 +141,8 @@ def main():
     # Configure QA Retrieval #
     # ---------------------- #
 
-    # set up a vectorstore database retriever to look for answers in the k most similar splits
-    retriever = db.as_retriever(search_kwargs={"k": k})
+    # set up a vectorstore database retriever that picks the chunks sent with each question
+    retriever = retrieval.build_retriever(db, target_sources, retriever_search_type, verbose=True)
     
     # create a retrieval QA chain with a retriever to look for answers
     qa = RetrievalQA.from_chain_type(llm=chat, chain_type="stuff", retriever=retriever, return_source_documents=False)
