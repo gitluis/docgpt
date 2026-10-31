@@ -13,8 +13,12 @@ Two settings, read from `.env` by the app and the notebooks, control it:
 
 This module has no imports from the rest of the package, so it works both
 from `docgpt/run.py` (`import retrieval`) and from the notebooks
-(`from docgpt import retrieval`).
+(`from docgpt import retrieval`). `format_sources` describes where the
+retrieved chunks came from, for citing them under an answer.
 """
+
+# modules
+import os
 
 
 # constants
@@ -183,3 +187,52 @@ def build_retriever(db, target_sources=None, search_type=None, verbose=False):
         print(f"Retrieving {search_kwargs['k']} of {n_splits} chunks per question using '{search_type}' search")
 
     return db.as_retriever(search_type=search_type, search_kwargs=search_kwargs)
+
+
+def format_sources(documents):
+    """
+    Describe where retrieved chunks came from, for citing them under an answer.
+
+    Chunks from the same file are grouped into one entry, in the order the
+    files first appear. PDF pages and CSV rows are numbered from 1.
+
+    Parameters
+    ----------
+    documents : list of Documents
+        Chunks returned by a retriever, such as the "source_documents" key of
+        a RetrievalQA output built with `return_source_documents=True`.
+
+    Returns
+    -------
+    sources : list of str
+        One entry per file, e.g. "bitcoin.pdf (pages 3, 4)", "data.csv
+        (row 12)" or "notes.txt". Empty if `documents` is empty.
+    """
+
+    files = dict()
+
+    for doc in documents or []:
+        metadata = doc.metadata or dict()
+        name = os.path.basename(str(metadata.get("source", "unknown source")))
+        places = files.setdefault(name, {"page": set(), "row": set()})
+
+        # PyMuPDFLoader numbers pages and CSVLoader numbers rows from 0
+        for key in ("page", "row"):
+            if isinstance(metadata.get(key), int):
+                places[key].add(metadata[key] + 1)
+
+    sources = list()
+
+    for name, places in files.items():
+        details = list()
+
+        for key in ("page", "row"):
+            numbers = sorted(places[key])
+
+            if numbers:
+                label = key if len(numbers) == 1 else f"{key}s"
+                details.append(f"{label} {', '.join(str(n) for n in numbers)}")
+
+        sources.append(f"{name} ({'; '.join(details)})" if details else name)
+
+    return sources

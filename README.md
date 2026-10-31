@@ -150,7 +150,7 @@ A few settings are constants in `docgpt/run.py` rather than environment variable
    streamlit run docgpt/app.py
    ```
 
-3. Open the URL Streamlit prints (usually <http://localhost:8501>) and type a question in the chat box.
+3. Open the URL Streamlit prints (usually <http://localhost:8501>) and type a question in the chat box. Under each answer, a **Sources** line lists the files (and PDF pages or CSV rows) of the chunks the model was given.
 
 Run the command from the repository root: `DOCUMENTS_DIR` and `VECTORSTORE_DB_DIR` are resolved relative to the current directory.
 
@@ -166,6 +166,19 @@ python docgpt/run.py
 ```
 
 This loads, splits, and indexes the documents into `VECTORSTORE_DB_DIR` and exits. It is useful for checking that your documents load and that the embeddings deployment works before starting the app.
+
+### Evaluate retrieval
+
+`eval/retrieval_eval.py` checks whether the retriever finds the right chunks, so you can compare `TARGET_SOURCES` and `RETRIEVER_SEARCH_TYPE` values with numbers instead of guesses. It calls no chat model: for each question in `eval/questions.json` (17 questions about the sample `documents/bitcoin.pdf`, each with the page or pages that hold its answer), it records whether any retrieved chunk comes from one of those pages.
+
+```bash
+python eval/retrieval_eval.py                      # mmr and similarity, k = 3, 5, 8
+python eval/retrieval_eval.py --k 5 10 all --misses --csv eval-results.csv
+```
+
+It prints, per setting, the **hit rate** (questions with a chunk from the right page), **MRR** (how high the first right chunk ranks; 1.00 means always first), the number of distinct **pages** among the chunks, and the **characters** sent per question. Embeddings follow your `.env`: Azure OpenAI when `OPENAI_API_KEY` is set (one request per chunk plus one per question; each text is embedded once and reused across settings), otherwise the local model in `EMBEDDINGS_MODEL_NAME` (`--embeddings local` forces it). The index is built in a temporary folder, so `VECTORSTORE_DB_DIR` is left alone.
+
+To evaluate your own documents, write a questions file in the same format (`{"question": ..., "source": "<file name>", "pages": [<page numbers from 1>]}`; omit `pages` for files without pages) and pass it with `--questions`. Questions about files that aren't in the documents folder are skipped.
 
 ### Scripted demo
 
@@ -185,7 +198,7 @@ jupyter lab
 
 | Notebook | What it does | Needs |
 | --- | --- | --- |
-| `Document Summarization & QA using OpenAI.ipynb` | Runs the same pipeline as the app step by step, then asks questions and summarization prompts with `ask_document(...)`. `interact(document_qa)` starts an interactive question loop. Like the app, it retrieves chunks with `TARGET_SOURCES` and `RETRIEVER_SEARCH_TYPE`; set `TARGET_SOURCES=all` before running it for the whole-document summarization prompts. | Azure OpenAI variables |
+| `Document Summarization & QA using OpenAI.ipynb` | Runs the same pipeline as the app step by step, then asks questions and summarization prompts with `ask_document(...)`, which prints the answer and its sources. `interact(document_qa)` starts an interactive question loop. Like the app, it retrieves chunks with `TARGET_SOURCES` and `RETRIEVER_SEARCH_TYPE`; set `TARGET_SOURCES=all` before running it for the whole-document summarization prompts. | Azure OpenAI variables |
 | `Document Summarization & QA using OpenAI (PPT).ipynb` | The same pipeline with a longer set of example questions and summarization prompts (use `TARGET_SOURCES=all` for those). | Azure OpenAI variables |
 | `Document Summarization & QA using Local LLM.ipynb` | Runs fully on your machine: sentence-transformers embeddings and a GPT4All-J model. The summarization cells are stored as raw (non-executable) cells; convert them to code cells to use them. `run_qa()` starts an interactive question loop; type `exit` to stop. | Local-model variables and model file |
 | `ChatLLM with Documents.ipynb` | A minimal local chat loop over a GPT4All-J model. Unlike the other notebooks, it keeps an existing store and adds only documents it hasn't indexed yet; `TARGET_SOURCES=all` covers every chunk in that store, including documents indexed in earlier runs. `run()` starts the question loop; type `exit` to stop. | Local-model variables and model file |
@@ -201,13 +214,16 @@ docgpt/
 ├── docgpt/
 │   ├── app.py              # Streamlit chat app (entry point)
 │   ├── run.py              # Builds the index and the RetrievalQA chain
-│   ├── retrieval.py        # Picks the chunks sent with each question (TARGET_SOURCES, RETRIEVER_SEARCH_TYPE)
+│   ├── retrieval.py        # Picks the chunks sent with each question and formats their sources
 │   ├── loaders.py          # Maps file extensions to LangChain document loaders
 │   ├── splitters.py        # Splits documents into chunks
 │   ├── storage.py          # Creates, checks, updates and removes the Chroma store
 │   ├── FCC_Copilot.py      # Scripted Streamlit demo with pre-recorded answers
 │   └── messages.py         # Pre-recorded questions and answers for the demo
 ├── documents/              # Your input files (git-ignored; contains a sample PDF)
+├── eval/
+│   ├── retrieval_eval.py   # Compares retriever settings on questions with known answer pages
+│   └── questions.json      # Questions about the sample bitcoin.pdf
 ├── *.ipynb                 # Exploration notebooks (see Notebooks)
 ├── env-example.txt         # Annotated template for .env
 ├── pip-requirements.txt    # Pinned dependencies of the original environment
@@ -221,7 +237,7 @@ The `database/` and `models/` folders are created by you or by the app at runtim
 - **The whole index is rebuilt each time it's built.** Starting the app or clicking **Rebuild index** re-embeds every chunk, even for documents that haven't changed.
 - **Answers only see the retrieved chunks.** By default the model gets the 5 chunks most similar to your question, so questions about all of your documents (such as "summarize everything") may miss content. Raise `TARGET_SOURCES`, or set it to `all` if your documents fit in the model's context window.
 - **No conversation memory.** Each question is answered on its own; earlier messages in the chat are displayed but not sent to the model.
-- **No source citations in the app.** The chain is built with `return_source_documents=False`, so answers don't show which documents they came from.
+- **Sources are files and pages, not quotes.** The Sources line lists every retrieved chunk's file, including chunks the model may not have used for its answer.
 - **Pinned 2023 dependencies.** See the note at the top and [Installation](#installation).
 
 ## Troubleshooting

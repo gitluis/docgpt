@@ -72,7 +72,8 @@ def main():
         A "stuff" chain that sends `TARGET_SOURCES` chunks (5 by default) to
         the model, picked by `RETRIEVER_SEARCH_TYPE` (see `retrieval.py`).
         Call it with a question string; the answer is in the "result" key of
-        the returned dict.
+        the returned dict and the chunks it was given are in
+        "source_documents" (see `retrieval.format_sources`).
 
     Raises
     ------
@@ -145,7 +146,7 @@ def main():
     retriever = retrieval.build_retriever(db, target_sources, retriever_search_type, verbose=True)
     
     # create a retrieval QA chain with a retriever to look for answers
-    qa = RetrievalQA.from_chain_type(llm=chat, chain_type="stuff", retriever=retriever, return_source_documents=False)
+    qa = RetrievalQA.from_chain_type(llm=chat, chain_type="stuff", retriever=retriever, return_source_documents=True)
     
     return qa
 
