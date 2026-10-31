@@ -12,7 +12,9 @@ def split_documents(documents, chunk_size=500, chunk_overlap=50, verbose=False):
 
     Uses LangChain's `RecursiveCharacterTextSplitter`, which prefers to break
     on paragraphs, then lines, then words. Each split keeps the metadata
-    (such as "source") of the document it came from.
+    (such as "source") of the document it came from, plus "start_index": the
+    character position where the split starts in that document, used to put
+    splits back in reading order (see `retrieval.sort_in_reading_order`).
 
     Parameters
     ----------
@@ -40,7 +42,7 @@ def split_documents(documents, chunk_size=500, chunk_overlap=50, verbose=False):
             print(f"Found {len(documents)} documents...")
     
         # split document into multiple texts
-        ts = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        ts = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap, add_start_index=True)
         splits = ts.split_documents(documents)
     
         if verbose:

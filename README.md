@@ -37,7 +37,7 @@ flowchart LR
 1. **Load** – every supported file in `DOCUMENTS_DIR` is opened with the LangChain loader that matches its extension (`docgpt/loaders.py`).
 2. **Split** – documents are cut into chunks of up to 500 characters with a 50-character overlap using `RecursiveCharacterTextSplitter` (`docgpt/splitters.py`).
 3. **Index** – any existing store in `VECTORSTORE_DB_DIR` is deleted and a new Chroma store is built from the chunks (`docgpt/storage.py`). The app does this once, when its first page loads. Chunks are embedded with OpenAI embeddings when an API key is configured, otherwise with a local Hugging Face sentence-transformers model.
-4. **Answer** – a `RetrievalQA` chain picks the chunks most relevant to your question (5 by default, set by `TARGET_SOURCES`), skipping near-duplicates, and sends them with the question to the chat model (temperature 0.7) in a single prompt (the `"stuff"` strategy), then returns its answer (`docgpt/run.py`, with retrieval in `docgpt/retrieval.py`). The Streamlit app (`docgpt/app.py`) shows the conversation.
+4. **Answer** – a `RetrievalQA` chain picks the chunks most relevant to your question (5 by default, set by `TARGET_SOURCES`), skipping near-duplicates, and sends them with the question to the chat model (temperature 0.7) in a single prompt (the `"stuff"` strategy), then returns its answer (`docgpt/run.py`, with retrieval in `docgpt/retrieval.py`). The Streamlit app (`docgpt/app.py`) shows the conversation. For summary requests ("summarize…", "key points", "resumen"…) the app instead sends every chunk, in reading order, when it all fits in the model's context window (see [Summaries and whole-document mode](#summaries-and-whole-document-mode)).
 
 ## Supported file types
 
@@ -116,7 +116,8 @@ The required `OPENAI_*` values are passed straight to the `openai` client, so a 
 | `OPENAI_API_MODEL_NAME` | Yes | The model behind that deployment, for example `gpt-4-32k`. |
 | `OPENAI_EMBEDDINGS_MODEL_NAME` | Yes | The embeddings model, for example `text-embedding-ada-002`. |
 | `OPENAI_EMBEDDINGS_DEPLOYMENT_NAME` | No | Name of your embeddings deployment. Defaults to `OPENAI_EMBEDDINGS_MODEL_NAME`, so you can leave it empty when the deployment is named after the model. |
-| `TARGET_SOURCES` | No | Number of chunks retrieved and sent to the model with each question. Default: 5. Set it to `all` to send every chunk, which helps with questions about all of your documents (such as summaries) but only works if their combined text fits in the model's context window. |
+| `OPENAI_API_CONTEXT_WINDOW` | No | Tokens your chat deployment accepts (prompt plus answer), used by the app to tell whether every chunk fits in one prompt. Leave empty to look it up from `OPENAI_API_MODEL_NAME` (GPT-3.5, GPT-4, GPT-4-32k, GPT-4 Turbo, GPT-4o and GPT-4.1 are known); unknown models are assumed to take 8,192. |
+| `TARGET_SOURCES` | No | Number of chunks retrieved and sent to the model with each question. Default: 5. Set it to `all` to send every chunk with every question (in reading order), which only works if their combined text fits in the model's context window. The app doesn't need `all` for summaries: it switches to every chunk on its own for summary requests. |
 | `RETRIEVER_SEARCH_TYPE` | No | How those chunks are picked. `mmr` (default, maximal marginal relevance) looks at the 20 most similar chunks (or 4 × `TARGET_SOURCES`, if larger) and picks ones that are relevant but not near-copies of each other; overlapping neighbor chunks would otherwise fill the slots. `similarity` takes the most similar chunks as they are. Ignored when `TARGET_SOURCES` is `all`. |
 
 Using OpenAI's public API instead of Azure OpenAI is not a tested configuration: requests are built Azure-style, with deployment names.
@@ -153,6 +154,19 @@ A few settings are constants in `docgpt/run.py` rather than environment variable
 3. Open the URL Streamlit prints (usually <http://localhost:8501>) and type a question in the chat box. Under each answer, a **Sources** line lists the files (and PDF pages or CSV rows) of the chunks the model was given.
 
 Run the command from the repository root: `DOCUMENTS_DIR` and `VECTORSTORE_DB_DIR` are resolved relative to the current directory.
+
+#### Summaries and whole-document mode
+
+Each question goes to one of two chains that share the same index:
+
+- **Top chunks** (the default): the `TARGET_SOURCES` chunks most relevant to the question.
+- **Whole document**: every chunk, in reading order (file, page, then position), so the model reads the documents as written. Used for questions that ask about everything, matched by keywords such as *summary*, *summarize*, *overview*, *TL;DR*, *key points*, *what is this document about*, *resumen*, *resúmelo* or *de qué trata* (full list in `docgpt/routing.py`).
+
+Whole-document mode is used only if every chunk, the question and about 1,000 tokens for the answer fit in the model's context window (`OPENAI_API_CONTEXT_WINDOW`). If they don't, the app uses the top chunks and says so.
+
+A note under each answer says which mode was used and why, for example *Whole document (all 51 chunks, ~6,500 tokens) · summary request detected*. A button under the latest answer answers the same question again the other way, if the keywords guessed wrong. To skip the guessing, set **Chunks sent to the model** in the sidebar to *Always top chunks* or *Always whole document*; the sidebar also shows how many tokens the whole document takes.
+
+Whole-document answers send far more text, so each one costs more than a top-chunks answer.
 
 The index is built once, when the first page loads, and is then shared by every browser tab until you stop the server. After you add, change or remove documents, click **Rebuild index** in the sidebar (or restart the app). Each build re-embeds every chunk, which costs one embeddings request per chunk.
 
@@ -213,8 +227,9 @@ For the local-model notebooks, obtain the `ggml-gpt4all-j-v1.3-groovy.bin` model
 docgpt/
 ├── docgpt/
 │   ├── app.py              # Streamlit chat app (entry point)
-│   ├── run.py              # Builds the index and the RetrievalQA chain
-│   ├── retrieval.py        # Picks the chunks sent with each question and formats their sources
+│   ├── run.py              # Builds the index and the two RetrievalQA chains
+│   ├── retrieval.py        # Picks the chunks sent with each question, counts tokens and formats sources
+│   ├── routing.py          # Decides per question: top chunks, or the whole document for summaries
 │   ├── loaders.py          # Maps file extensions to LangChain document loaders
 │   ├── splitters.py        # Splits documents into chunks
 │   ├── storage.py          # Creates, checks, updates and removes the Chroma store
@@ -235,7 +250,9 @@ The `database/` and `models/` folders are created by you or by the app at runtim
 ## Known limitations
 
 - **The whole index is rebuilt each time it's built.** Starting the app or clicking **Rebuild index** re-embeds every chunk, even for documents that haven't changed.
-- **Answers only see the retrieved chunks.** By default the model gets the 5 chunks most similar to your question, so questions about all of your documents (such as "summarize everything") may miss content. Raise `TARGET_SOURCES`, or set it to `all` if your documents fit in the model's context window.
+- **Answers only see the retrieved chunks.** By default the model gets the 5 chunks most similar to your question, so broad questions may miss content. Summary requests get every chunk, but only when they fit in the model's context window; larger document sets still get the top chunks.
+- **Summary detection is keyword-based.** Phrasings outside the list in `docgpt/routing.py` get the top chunks; use the button under the answer or the sidebar setting. Narrow requests such as "summarize page 3" also get the whole document.
+- **Token counts may be estimates.** They come from `tiktoken`, which downloads its encoding the first time. Without internet access the app estimates from the character count instead, erring toward "doesn't fit".
 - **No conversation memory.** Each question is answered on its own; earlier messages in the chat are displayed but not sent to the model.
 - **Sources are files and pages, not quotes.** The Sources line lists every retrieved chunk's file, including chunks the model may not have used for its answer.
 - **Pinned 2023 dependencies.** See the note at the top and [Installation](#installation).

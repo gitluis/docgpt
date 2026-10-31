@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Build DocGPT's retrieval QA chain from the documents folder.
+Build DocGPT's retrieval QA chains from the documents folder.
 
 Settings are read from `.env` when this module is imported (see
 `env-example.txt`): `DOCUMENTS_DIR`, `VECTORSTORE_DB_DIR`, `TARGET_SOURCES`,
-`RETRIEVER_SEARCH_TYPE` and the Azure OpenAI `OPENAI_*` variables.
+`RETRIEVER_SEARCH_TYPE` and the Azure OpenAI `OPENAI_*` variables, including
+the optional `OPENAI_API_CONTEXT_WINDOW`.
 
 Running this file directly builds the vector store and exits, which is a
 quick way to check that documents load and embeddings work:
@@ -18,6 +19,7 @@ import openai
 
 import loaders
 import retrieval
+import routing
 import splitters
 import storage
 
@@ -51,9 +53,99 @@ openai.api_key = os.environ.get("OPENAI_API_KEY")
 llm_model_name = os.environ.get("OPENAI_API_MODEL_NAME")
 llm_deployment_name = os.environ.get("OPENAI_API_DEPLOYMENT_NAME")
 
+# tokens the chat model accepts; empty uses a table of known models (see retrieval.py)
+llm_context_window = os.environ.get("OPENAI_API_CONTEXT_WINDOW")
+
 embeddings_model_name = os.environ.get("OPENAI_EMBEDDINGS_MODEL_NAME")
 # defaults to the model name when not set
 embeddings_deployment_name = os.environ.get("OPENAI_EMBEDDINGS_DEPLOYMENT_NAME") or embeddings_model_name
+
+
+# classes
+class DocChains:
+    """
+    The two QA chains the app chooses between, plus what it needs to choose.
+
+    Both chains share one vector store and one chat model, so having two
+    costs no extra embeddings.
+
+    Attributes
+    ----------
+    top_k : langchain.chains.RetrievalQA
+        Sends `k` chunks picked by `RETRIEVER_SEARCH_TYPE`.
+    whole : langchain.chains.RetrievalQA
+        Sends every chunk, in reading order. The same object as `top_k`
+        when `TARGET_SOURCES` already covers every chunk.
+    k : int
+        Chunks `top_k` sends.
+    n_splits : int
+        Chunks in the vector store.
+    chunk_tokens : int
+        Tokens in all chunks (see `retrieval.count_tokens`).
+    context_window : int
+        Tokens the chat model accepts (see `retrieval.get_context_window`).
+    model_name : str or None
+        Chat model name, used to count a question's tokens.
+    """
+
+    def __init__(self, top_k, whole, k, n_splits, chunk_tokens, context_window, model_name=None):
+        self.top_k = top_k
+        self.whole = whole
+        self.k = k
+        self.n_splits = n_splits
+        self.chunk_tokens = chunk_tokens
+        self.context_window = context_window
+        self.model_name = model_name
+
+    @property
+    def covers_all(self):
+        """ True when top-k mode already sends every chunk (`TARGET_SOURCES` is `all` or large). """
+
+        return self.k >= self.n_splits
+
+    def whole_prompt_tokens(self, question=""):
+        """ Estimated prompt size, in tokens, when every chunk is sent with `question`. """
+
+        question_tokens = retrieval.count_tokens([question], self.model_name) if question else 0
+
+        return retrieval.get_prompt_tokens(self.chunk_tokens, self.n_splits, question_tokens)
+
+    def whole_fits(self, question=""):
+        """ Whether every chunk, `question` and room for the answer fit in the context window. """
+
+        return self.whole_prompt_tokens(question) + retrieval.ANSWER_TOKENS_RESERVED <= self.context_window
+
+    def choose_mode(self, question, override=routing.AUTO):
+        """
+        Pick the mode for a question (see `routing.choose_mode`).
+
+        Returns
+        -------
+        mode : str
+            `routing.TOP_K` or `routing.WHOLE`. Always `routing.WHOLE` when
+            `covers_all`, since both chains then send the same chunks.
+        reason : str or None
+        """
+
+        if self.covers_all:
+            return routing.WHOLE, "TARGET_SOURCES covers every chunk"
+
+        return routing.choose_mode(question, override, self.whole_fits(question))
+
+    def ask(self, question, mode=routing.TOP_K):
+        """
+        Answer a question with the chain for `mode`.
+
+        Returns
+        -------
+        output : dict
+            The chain's output: the answer in "result" and the chunks it was
+            given in "source_documents".
+        """
+
+        chain = self.whole if mode == routing.WHOLE else self.top_k
+
+        return chain(question)
 
 
 # functions
@@ -68,18 +160,21 @@ def main():
 
     Returns
     -------
-    qa : langchain.chains.RetrievalQA
-        A "stuff" chain that sends `TARGET_SOURCES` chunks (5 by default) to
-        the model, picked by `RETRIEVER_SEARCH_TYPE` (see `retrieval.py`).
-        Call it with a question string; the answer is in the "result" key of
-        the returned dict and the chunks it was given are in
+    chains : DocChains
+        Two "stuff" chains over the same store: `chains.top_k` sends
+        `TARGET_SOURCES` chunks (5 by default), picked by
+        `RETRIEVER_SEARCH_TYPE`, and `chains.whole` sends every chunk in
+        reading order. Call `chains.choose_mode(question)` to pick one and
+        `chains.ask(question, mode)` to answer; the answer is in the "result"
+        key of the returned dict and the chunks it was given are in
         "source_documents" (see `retrieval.format_sources`).
 
     Raises
     ------
     ValueError
         If `DOCUMENTS_DIR` has no supported documents with text, or if
-        `TARGET_SOURCES` or `RETRIEVER_SEARCH_TYPE` is invalid.
+        `TARGET_SOURCES`, `RETRIEVER_SEARCH_TYPE` or
+        `OPENAI_API_CONTEXT_WINDOW` is invalid.
 
     Notes
     -----
@@ -112,6 +207,7 @@ def main():
 
     # validate retrieval settings before spending time and requests on embeddings
     retrieval.get_search_settings(target_sources, retriever_search_type, len(splits))
+    context_window = retrieval.get_context_window(llm_model_name, llm_context_window)
 
     # --------------------- #
     # Create local database #
@@ -147,8 +243,28 @@ def main():
     
     # create a retrieval QA chain with a retriever to look for answers
     qa = RetrievalQA.from_chain_type(llm=chat, chain_type="stuff", retriever=retriever, return_source_documents=True)
-    
-    return qa
+
+    # and a second chain over the same store that sends every chunk, in reading order
+    whole_retriever = retriever
+
+    if not isinstance(retriever, retrieval.WholeDocumentRetriever):
+        whole_retriever = retrieval.build_retriever(db, "all")
+
+    qa_whole = qa
+
+    if whole_retriever is not retriever:
+        qa_whole = RetrievalQA.from_chain_type(llm=chat, chain_type="stuff", retriever=whole_retriever, return_source_documents=True)
+
+    # count tokens once, to tell later whether every chunk fits in one prompt
+    chunk_tokens = retrieval.count_tokens([doc.page_content for doc in whole_retriever.documents], llm_model_name)
+    k = retrieval.get_target_sources(target_sources, len(whole_retriever.documents))
+
+    chains = DocChains(qa, qa_whole, k, len(whole_retriever.documents), chunk_tokens, context_window, llm_model_name)
+
+    print(f"All chunks: ~{chunk_tokens:,} tokens; context window: {context_window:,} tokens; "
+          f"whole-document mode {'fits' if chains.whole_fits() else 'does not fit'}")
+
+    return chains
 
 
 if __name__ == "__main__":
