@@ -37,7 +37,7 @@ flowchart LR
 1. **Load** – every supported file in `DOCUMENTS_DIR` is opened with the LangChain loader that matches its extension (`docgpt/loaders.py`).
 2. **Split** – documents are cut into chunks of up to 500 characters with a 50-character overlap using `RecursiveCharacterTextSplitter` (`docgpt/splitters.py`).
 3. **Index** – any existing store in `VECTORSTORE_DB_DIR` is deleted and a new Chroma store is built from the chunks (`docgpt/storage.py`). The app does this once, when its first page loads. Chunks are embedded with OpenAI embeddings when an API key is configured, otherwise with a local Hugging Face sentence-transformers model.
-4. **Answer** – a `RetrievalQA` chain finds the chunks most similar to your question (5 by default, set by `TARGET_SOURCES`) and sends them with the question to the chat model (temperature 0.7) in a single prompt (the `"stuff"` strategy), then returns its answer (`docgpt/run.py`). The Streamlit app (`docgpt/app.py`) shows the conversation.
+4. **Answer** – a `RetrievalQA` chain picks the chunks most relevant to your question (5 by default, set by `TARGET_SOURCES`), skipping near-duplicates, and sends them with the question to the chat model (temperature 0.7) in a single prompt (the `"stuff"` strategy), then returns its answer (`docgpt/run.py`, with retrieval in `docgpt/retrieval.py`). The Streamlit app (`docgpt/app.py`) shows the conversation.
 
 ## Supported file types
 
@@ -117,6 +117,7 @@ The required `OPENAI_*` values are passed straight to the `openai` client, so a 
 | `OPENAI_EMBEDDINGS_MODEL_NAME` | Yes | The embeddings model, for example `text-embedding-ada-002`. |
 | `OPENAI_EMBEDDINGS_DEPLOYMENT_NAME` | No | Name of your embeddings deployment. Defaults to `OPENAI_EMBEDDINGS_MODEL_NAME`, so you can leave it empty when the deployment is named after the model. |
 | `TARGET_SOURCES` | No | Number of chunks retrieved and sent to the model with each question. Default: 5. Set it to `all` to send every chunk, which helps with questions about all of your documents (such as summaries) but only works if their combined text fits in the model's context window. |
+| `RETRIEVER_SEARCH_TYPE` | No | How those chunks are picked. `mmr` (default, maximal marginal relevance) looks at the 20 most similar chunks (or 4 × `TARGET_SOURCES`, if larger) and picks ones that are relevant but not near-copies of each other; overlapping neighbor chunks would otherwise fill the slots. `similarity` takes the most similar chunks as they are. Ignored when `TARGET_SOURCES` is `all`. |
 
 Using OpenAI's public API instead of Azure OpenAI is not a tested configuration: requests are built Azure-style, with deployment names.
 
@@ -132,11 +133,11 @@ Values in parentheses are the ones set in `env-example.txt`.
 | `EMBEDDINGS_MODEL_NAME` | Hugging Face sentence-transformers model used for embeddings (`all-MiniLM-L6-v2`). |
 | `MODEL_MAX_TOKENS` | Maximum number of tokens the model generates (1000). |
 | `MODEL_N_BATCH` | Number of prompt tokens processed per batch (20). |
-| `TARGET_SOURCES` | Number of chunks retrieved to answer each question (5). Must be a whole number in the notebooks; `all` only works in the app. |
+| `TARGET_SOURCES`, `RETRIEVER_SEARCH_TYPE` | Same as above (5, `mmr`). |
 
 ### Settings in code
 
-A few settings are constants in `docgpt/run.py` rather than environment variables: the chunk size (500 characters), the chunk overlap (10% of the chunk size), and the chat model temperature (0.7).
+A few settings are constants in `docgpt/run.py` rather than environment variables: the chunk size (500 characters), the chunk overlap (10% of the chunk size), and the chat model temperature (0.7). The MMR tuning values (how many chunks it looks at, and how much it favors variety over relevance) are constants in `docgpt/retrieval.py`.
 
 ## Usage
 
@@ -184,10 +185,10 @@ jupyter lab
 
 | Notebook | What it does | Needs |
 | --- | --- | --- |
-| `Document Summarization & QA using OpenAI.ipynb` | Runs the same pipeline as the app step by step, then asks questions and summarization prompts with `ask_document(...)`. `interact(document_qa)` starts an interactive question loop. Unlike the app, it sends every chunk with each question so that whole-document summaries work. | Azure OpenAI variables |
-| `Document Summarization & QA using OpenAI (PPT).ipynb` | The same pipeline with a longer set of example questions and summarization prompts. | Azure OpenAI variables |
+| `Document Summarization & QA using OpenAI.ipynb` | Runs the same pipeline as the app step by step, then asks questions and summarization prompts with `ask_document(...)`. `interact(document_qa)` starts an interactive question loop. Like the app, it retrieves chunks with `TARGET_SOURCES` and `RETRIEVER_SEARCH_TYPE`; set `TARGET_SOURCES=all` before running it for the whole-document summarization prompts. | Azure OpenAI variables |
+| `Document Summarization & QA using OpenAI (PPT).ipynb` | The same pipeline with a longer set of example questions and summarization prompts (use `TARGET_SOURCES=all` for those). | Azure OpenAI variables |
 | `Document Summarization & QA using Local LLM.ipynb` | Runs fully on your machine: sentence-transformers embeddings and a GPT4All-J model. The summarization cells are stored as raw (non-executable) cells; convert them to code cells to use them. `run_qa()` starts an interactive question loop; type `exit` to stop. | Local-model variables and model file |
-| `ChatLLM with Documents.ipynb` | A minimal local chat loop over a GPT4All-J model. Unlike the other notebooks, it keeps an existing store and adds only documents it hasn't indexed yet. `run()` starts the question loop; type `exit` to stop. | Local-model variables and model file |
+| `ChatLLM with Documents.ipynb` | A minimal local chat loop over a GPT4All-J model. Unlike the other notebooks, it keeps an existing store and adds only documents it hasn't indexed yet; `TARGET_SOURCES=all` covers every chunk in that store, including documents indexed in earlier runs. `run()` starts the question loop; type `exit` to stop. | Local-model variables and model file |
 
 The notebooks are committed with the outputs of earlier runs.
 
@@ -200,6 +201,7 @@ docgpt/
 ├── docgpt/
 │   ├── app.py              # Streamlit chat app (entry point)
 │   ├── run.py              # Builds the index and the RetrievalQA chain
+│   ├── retrieval.py        # Picks the chunks sent with each question (TARGET_SOURCES, RETRIEVER_SEARCH_TYPE)
 │   ├── loaders.py          # Maps file extensions to LangChain document loaders
 │   ├── splitters.py        # Splits documents into chunks
 │   ├── storage.py          # Creates, checks, updates and removes the Chroma store
